@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline Sequencial: Veg_sec_weight -> Burn_freq -> Burn_weight -> 
+#                     -> Edge_weight -> Com_weights -> Biotic_Value
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+services:
+  veg-sec-weight:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: npi-geo:latest
+    #pull_policy: build
+    container_name: veg-sec-weight
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    command: ["python3", "scripts/vegetation/veg_sec_weight.py"]
+    restart: "no"
+
+  npi_burn_freq:
+    image: npi-geo:latest
+    container_name: npi_burn_freq
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    command: ["python3", "scripts/burn/burn_freq_map.py"]
+    restart: "no"
+    depends_on:
+      veg-sec-weight:
+        condition: service_completed_successfully
+
+  npi_burn_weight:
+    image: npi-geo:latest
+    container_name: npi_burn_weight
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    command: ["python3", "scripts/burn/burn_weight.py"]
+    restart: "no"
+    depends_on:
+      npi_burn_freq:
+        condition: service_completed_successfully
+
+  npi_edge_weights:
+    image: npi-geo:latest
+    container_name: npi_edge_weights
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    command: ["python3", "scripts/edge/edge_weight.py"]
+    restart: "no"
+    depends_on:
+      npi_burn_weight:
+        condition: service_completed_successfully
+
+  npi_com_weights:
+    image: npi-geo:latest
+    container_name: npi_com_weights
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    command: ["python3", "scripts/weights/make_map_weights.py"]
+    restart: "no"
+    depends_on:
+      npi_edge_weights:
+        condition: service_completed_successfully
+
+  npi_biotic_value:
+    image: npi-geo:latest
+    container_name: npi_biotic_value
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    command: ["python3", "scripts/bvalue/make_map_biotic_value.py"]
+    restart: "no"
+    depends_on:
+      npi_com_weights:
+        condition: service_completed_successfully    

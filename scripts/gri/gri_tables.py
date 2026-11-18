@@ -1,0 +1,102 @@
+"""
+Script para gerar as tabelas GRI 106ai e 107ai, além dos balanços natural e de BV.
+Baseado no script matlab original, mas reescrito em Python para maior flexibilidade e integração com pandas.
+Funcao reclass_novo: ajuste na logica anterior para ser mais generalista quanto ao dados de entrada.
+"""
+
+import yaml
+from shared.utils_gri import *
+
+def main():
+    print("Iniciando processamento...")
+
+    # ================================
+    # Configurações Iniciais do YAML
+    # ================================
+    with open('config.yaml', 'r', encoding='utf-8') as f:
+        cfg = yaml.safe_load(f)
+
+    PATHS = cfg['Paths']
+    DATA = cfg['Data']
+
+    OUT_DIR = PATHS['out_dir']
+    AREA = DATA['area']
+    BASE_YEAR = DATA['base_year_compare']
+    END_YEAR = DATA['end_year']
+    SIZE_PIXEL = DATA['size_pixel']
+    
+    # Formatos de saída CSV
+    SEP = DATA['separator']
+    DECIMAL = DATA['decimal_separator']
+    FLOAT_FORMAT = DATA['float_format']
+
+    # Formatando caminhos dinâmicos entrada/saída
+    FILE_RECLASS = PATHS['file_reclass_path'].format(AREA=AREA)
+    FILE_TABLE = f"{OUT_DIR}/{PATHS['file_table_comparison'].format(AREA=AREA)}"
+    OUT_G106 = f"{OUT_DIR}/{PATHS['output_g106'].format(AREA=AREA)}"
+    OUT_G107 = f"{OUT_DIR}/{PATHS['output_g107'].format(AREA=AREA)}"
+    OUT_LULC_COND = f"{OUT_DIR}/{PATHS['output_lulc_cond'].format(AREA=AREA)}"
+    OUT_BALANCE = f"{OUT_DIR}/{PATHS['output_balance'].format(AREA=AREA)}"
+    OUT_BV_BALANCE = f"{OUT_DIR}/{PATHS['output_bv_balance'].format(AREA=AREA)}"
+    
+    # 1. Carregar os dados (passando as variáveis parametrizadas)
+    FUCA, Reclass_IBGE, Reclass_geral, Reclass_canga, Reclass_N4N5 = carregar_dados(
+        arquivo_fuca=FILE_TABLE,
+        arquivo_reclass=FILE_RECLASS,
+        base_year=BASE_YEAR,
+        end_year=END_YEAR,
+        size_pixel=SIZE_PIXEL
+    )
+
+    # 2. Reclassificar áreas
+    dict_ibge = dict(zip(Reclass_IBGE['IBGE'], Reclass_IBGE['Reclass_IBGE']))
+    FUCA['ReIBGE'] = FUCA['IBGE'].map(dict_ibge).fillna(FUCA['IBGE']).astype(str)
+
+    # Chamada dinâmica baseada nos anos do yaml
+    col_relulc_base = f'ReLULC_{BASE_YEAR}'
+    col_relulc_end = f'ReLULC_{END_YEAR}'
+    col_lulc_base = f'LULC_{BASE_YEAR}'
+    col_lulc_end = f'LULC_{END_YEAR}'
+
+    FUCA[col_relulc_base] = reclass(FUCA[col_lulc_base], FUCA['OpUnit'], FUCA['ReIBGE'], Reclass_geral, Reclass_N4N5, Reclass_canga, 'LULC', 'Reclass_LULC')
+    FUCA[col_relulc_end] = reclass(FUCA[col_lulc_end], FUCA['OpUnit'], FUCA['ReIBGE'], Reclass_geral, Reclass_N4N5, Reclass_canga, 'LULC', 'Reclass_LULC')
+
+    # 3. Gerar tabelas intermediárias (106ai e 107ai)
+    antBase, antEnd, G106b = gerar_tabelas_intermediarias(
+        FUCA, 
+        path_out_106=OUT_G106, 
+        path_out_107=OUT_G107, 
+        path_out_reclass=OUT_LULC_COND,
+        base_year=BASE_YEAR,
+        end_year=END_YEAR,
+        sep=SEP,
+        decimal=DECIMAL,
+        float_format=FLOAT_FORMAT
+    )
+    print("Tabelas intermediárias 106ai e 107ai exportadas.")
+
+    # 4. Calcular balanço e exportar final
+    SaidaBalanco = calcular_balanco(FUCA, antBase, antEnd, BASE_YEAR, END_YEAR)
+    SaidaBalanco.to_csv(OUT_BALANCE, 
+                        index=False,
+                        float_format=FLOAT_FORMAT,
+                        sep=SEP,
+                        decimal=DECIMAL
+                        )
+
+    SaidaBalancoBV = calcular_balanco_bv(
+        FUCA, antBase, antEnd, BASE_YEAR, END_YEAR
+    )
+    SaidaBalancoBV.to_csv(
+        OUT_BV_BALANCE,
+        index=False,
+        float_format=FLOAT_FORMAT,
+        sep=SEP,
+        decimal=DECIMAL,
+    )
+
+    print("Tabela de balanço gerada com sucesso.")
+    print(f"Tabela de balanço BV gerada: {OUT_BV_BALANCE}")
+
+if __name__ == "__main__":
+    main()

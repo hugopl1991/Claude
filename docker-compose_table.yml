@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline Sequencial: Tables -> GRI 
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+services:
+
+  npi_tables:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: npi-geo:latest
+    container_name: npi_tables
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    #command: ["python3", "scripts/comparison/compare_maps_conditions.py"]
+    command: ["python3", "scripts/comparison/compare_maps_condicao_edt.py"]
+    restart: "no"
+
+  npi_GRI:
+    image: npi-geo:latest
+    container_name: npi_GRI
+    volumes:
+      - ./:/app:delegated
+    working_dir: /app
+    #environment:
+    #  - PYTHONUNBUFFERED=1
+    command: ["python3", "scripts/gri/gri_tables.py"]
+    restart: "no"
+    depends_on:
+      npi_tables:
+        condition: service_completed_successfully

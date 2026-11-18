@@ -1,0 +1,22 @@
+# Ignora tudo dentro de inputs
+inputs/*
+
+# Permite acessar a pasta Planilhas
+!inputs/Planilhas/
+
+# Ignora todo o conteúdo da pasta Planilhas
+inputs/Planilhas/*
+
+# Mantém apenas estes arquivos
+!inputs/Planilhas/tabela_queimadas.csv
+!inputs/Planilhas/Dicionario.xlsx
+!inputs/Planilhas/Reclass_PA.xlsx
+
+# Outras pastas temporárias
+tmp/
+output/
+__pycache__
+
+# Outros
+.build_hash
+*.bak
