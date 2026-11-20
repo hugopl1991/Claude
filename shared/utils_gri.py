@@ -5,100 +5,124 @@ Baseado no script matlab original, mas reescrito em Python para maior flexibilid
 
 import pandas as pd
 import numpy as np
-from pathlib import Path
 
-def carregar_dados(arquivo_fuca, arquivo_reclass, base_year, end_year, size_pixel):
-    """Lê e prepara os dados brutos das planilhas, tolerando a ausência de abas específicas de PA (geral/canga/N4N5)."""
-    try:
-        FUCA = pd.read_excel(arquivo_fuca, sheet_name='Sheet1')
-        
-        # Lendo o arquivo de reclassificação usando ExcelFile para verificar as abas
-        xls = pd.ExcelFile(arquivo_reclass)
-        Reclass_IBGE = pd.read_excel(xls, sheet_name='Reclass_IBGE')
 
-        # Tabela GERAL de reclassificação de LULC: regra padrão aplicada quando
-        # a linha não é OpUnit N4N5 nem pertence a uma OpUnit com Refúgio Vegetacional
-        # Montano (canga). Aceita o nome novo 'Reclass_LULC_geral' ou o nome legado
-        # 'Reclass_LULC_floresta' (usado nas planilhas antigas do PA).
-        if 'Reclass_LULC_geral' in xls.sheet_names:
-            Reclass_geral = pd.read_excel(xls, sheet_name='Reclass_LULC_geral')
-        elif 'Reclass_LULC_floresta' in xls.sheet_names:
-            Reclass_geral = pd.read_excel(xls, sheet_name='Reclass_LULC_floresta')
-        else:
-            Reclass_geral = pd.DataFrame(columns=['LULC', 'Reclass_LULC']) # DataFrame vazio de fallback
+def _read_optional_sheet(workbook, sheet_name, columns):
+    if sheet_name not in workbook.sheet_names:
+        return pd.DataFrame(columns=columns)
+    return pd.read_excel(workbook, sheet_name=sheet_name)
 
-        # Tratamento para rodar em outros estados (Ex: MG) que não possuem as abas de Canga/N4N5
-        if 'Reclass_LULC_canga' in xls.sheet_names:
-            Reclass_canga = pd.read_excel(xls, sheet_name='Reclass_LULC_canga')
-        else:
-            Reclass_canga = pd.DataFrame(columns=['LULC', 'Reclass_LULC']) # DataFrame vazio de fallback
-            
-        if 'Reclass_LULC_N4N5' in xls.sheet_names:
-            Reclass_N4N5 = pd.read_excel(xls, sheet_name='Reclass_LULC_N4N5')
-        else:
-            Reclass_N4N5 = pd.DataFrame(columns=['LULC', 'Reclass_LULC']) # DataFrame vazio de fallback
 
-        # Prioridade da regra GERAL:
-        # - No Pará (aba Reclass_LULC_canga presente): mantém a lógica histórica/validada
-        #   no MATLAB, em que a própria tabela de canga também serve como regra geral
-        #   para as linhas que não são N4N5 nem OpUnit com canga.
-        # - Em outros estados (sem aba de canga): usa a tabela geral/floresta
-        #   (Reclass_LULC_geral ou, no nome legado, Reclass_LULC_floresta) como fallback.
-        if not Reclass_canga.empty:
-            Reclass_geral = Reclass_canga
-
-    except FileNotFoundError as e:
-        print(f"Erro ao carregar arquivos: Verifique se os caminhos estão corretos. Detalhe: {e}")
-        raise
-
-    # Nomes das colunas baseadas nos anos passados
+def carregar_dados(arquivo_fuca, arquivo_reclass, base_year, end_year, size_pixel, config=None):
+    """Lê e prepara as tabelas de comparação e reclassificação da área."""
+    config = config or {}
+    FUCA = pd.read_excel(arquivo_fuca, sheet_name=0)
     col_lulc_base = f'LULC_{base_year}'
     col_lulc_end = f'LULC_{end_year}'
 
-    # Limpeza básica e padronização
-    for col in [col_lulc_base, col_lulc_end]:
-        FUCA[col] = FUCA[col].astype(str).str.strip()
-        FUCA.loc[FUCA[col] == "0", col] = 'Zero'
+    with pd.ExcelFile(arquivo_reclass) as xls:
+        general_candidates = config.get(
+            'lulc_reclass_sheets',
+            ['Reclass_LULC_geral', 'Reclass_LULC_canga', 'Reclass_LULC_floresta'],
+        )
+        Reclass_IBGE = _read_optional_sheet(xls, 'Reclass_IBGE', ['IBGE', 'Reclass_IBGE'])
+        Reclass_geral = pd.DataFrame(columns=['LULC', 'Reclass_LULC'])
+        for sheet in general_candidates:
+            if sheet in xls.sheet_names:
+                candidate = pd.read_excel(xls, sheet_name=sheet)
+                if {'LULC', 'Reclass_LULC'}.issubset(candidate.columns):
+                    Reclass_geral = candidate
+                    break
+        Reclass_canga = _read_optional_sheet(
+            xls, config.get('lulc_canga_sheet', 'Reclass_LULC_canga'),
+            ['LULC', 'Reclass_LULC'],
+        )
+        Reclass_N4N5 = _read_optional_sheet(
+            xls, config.get('lulc_n4n5_sheet', 'Reclass_LULC_N4N5'),
+            ['LULC', 'Reclass_LULC'],
+        )
 
-    # Regra específica PARNA (Se não existir "S11D - PARNA", simplesmente não fará nada)
-    idx_parna = FUCA[col_lulc_end] == "S11D - PARNA"
-    FUCA.loc[idx_parna, col_lulc_base] = 'S11D'
-    
-    # Cálculo de área (usando o tamanho do pixel parametrizado)
+    required_columns = {col_lulc_base, col_lulc_end, 'Area m2', 'Qtd_pixels', 'OpUnit', 'IBGE'}
+    missing_columns = required_columns.difference(FUCA.columns)
+    if missing_columns:
+        raise ValueError(
+            f'Tabela de comparação sem colunas necessárias: {", ".join(missing_columns)}'
+        )
+
+    for column in (col_lulc_base, col_lulc_end):
+        FUCA[column] = FUCA[column].astype(str).str.strip()
+        FUCA.loc[FUCA[column] == "0", column] = 'Zero'
+
+    corrections = config.get(
+        'lulc_class_corrections',
+        [{'when_end': 'S11D - PARNA', 'set_base': 'S11D'}],
+    )
+
+    for correction in corrections:
+        idx_correction = FUCA[col_lulc_end] == correction['when_end']
+        FUCA.loc[idx_correction, col_lulc_base] = correction['set_base']
+
+    try:
+        pixel_size = float(size_pixel)
+    except (TypeError, ValueError) as error:
+        raise ValueError('size_pixel deve ser um número positivo.') from error
+    if not np.isfinite(pixel_size) or pixel_size <= 0:
+        raise ValueError('size_pixel deve ser um número positivo.')
+
+    FUCA['Area m2'] = pd.to_numeric(FUCA['Area m2'], errors='raise')
+    FUCA['Qtd_pixels'] = pd.to_numeric(FUCA['Qtd_pixels'], errors='raise')
     idx_zero = FUCA['Area m2'] == 0
-    FUCA.loc[idx_zero, 'Area m2'] = FUCA.loc[idx_zero, 'Qtd_pixels'] * (size_pixel ** 2)
-    FUCA['Area_ha'] = (FUCA['Area m2'] / 10000)
+    FUCA.loc[idx_zero, 'Area m2'] = (
+        FUCA.loc[idx_zero, 'Qtd_pixels'] * pixel_size ** 2
+    )
+    FUCA['Area_ha'] = FUCA['Area m2'] / 10000
 
     return FUCA, Reclass_IBGE, Reclass_geral, Reclass_canga, Reclass_N4N5
 
 
-def reclass(var, opunit, ibge, lookup_geral, lookup_N4N5, lookup_canga, keycol, valcol):
-    """Aplica as regras de reclassificação baseadas na Unidade Operacional e IBGE."""
+def _lookup_dict(lookup, keycol, valcol):
+    if keycol not in lookup.columns or valcol not in lookup.columns:
+        raise ValueError(
+            f'Tabela de reclassificação precisa conter as colunas '
+            f'{keycol} e {valcol}.'
+        )
+    keys = lookup[keycol].astype(str).str.strip()
+    return dict(zip(keys, lookup[valcol]))
+
+
+def reclass(var, opunit, ibge, lookup_geral, lookup_N4N5, lookup_canga, keycol, valcol, config=None):
+    """Aplica as regras de reclassificação definidas para a área."""
+    config = config or {}
     var_txt = var.astype(str).str.strip()
     opunit_txt = opunit.astype(str).str.strip().str.upper()
-    ibge_txt = ibge.astype(str).str.strip()
+    ibge_txt = ibge.astype(str).str.strip().str.casefold()
 
-    # Se as lookups vierem vazias (outros estados), o dict() ficará vazio e o .map() não aplicará essas regras
-    dict_geral = dict(zip(lookup_geral[keycol].astype(str).str.strip(), lookup_geral[valcol]))
-    dict_N4N5 = dict(zip(lookup_N4N5[keycol].astype(str).str.strip(), lookup_N4N5[valcol]))
-    dict_canga = dict(zip(lookup_canga[keycol].astype(str).str.strip(), lookup_canga[valcol]))
+    dict_geral = _lookup_dict(lookup_geral, keycol, valcol)
+    dict_N4N5 = _lookup_dict(lookup_N4N5, keycol, valcol)
+    dict_canga = _lookup_dict(lookup_canga, keycol, valcol)
 
-    out = pd.Series(index=var.index, dtype=object)
-
-    is_refugio = ibge_txt == "Refúgio Vegetacional Montano"
+    canga_ibge_classes = {
+        str(value).strip().casefold()
+        for value in config.get(
+            'canga_ibge_classes', ['Refúgio Vegetacional Montano']
+        )
+    }
+    is_refugio = ibge_txt.isin(canga_ibge_classes)
     opunits_com_canga = opunit_txt[is_refugio].unique()
 
-    is_N4N5 = opunit_txt == "N4N5"
+    n4n5_operational_units = {
+        str(value).strip().upper()
+        for value in config.get('n4n5_operational_units', ['N4N5'])
+    }
+    is_N4N5 = opunit_txt.isin(n4n5_operational_units)
     is_canga_opunit = opunit_txt.isin(opunits_com_canga)
 
+    out = var_txt.map(dict_geral)
     idx_N4N5 = is_N4N5
-    out[idx_N4N5] = var_txt[idx_N4N5].map(dict_N4N5)
-
     idx_canga = ~is_N4N5 & is_canga_opunit
-    out[idx_canga] = var_txt[idx_canga].map(dict_canga)
-
-    idx_geral = ~is_N4N5 & ~is_canga_opunit
-    out[idx_geral] = var_txt[idx_geral].map(dict_geral)
+    for mask, lookup in ((idx_N4N5, dict_N4N5), (idx_canga, dict_canga)):
+        specialized = var_txt[mask].map(lookup)
+        out.loc[mask] = specialized.combine_first(out.loc[mask])
 
     return out
 
@@ -237,7 +261,7 @@ def _validate_rad_columns(data, col_rad_base, col_rad_end):
     return True
 
 
-def calcular_balanco_bv(FUCA, antBase, antEnd, base_year, end_year):
+def calcular_balanco_bv(FUCA, antBase, antEnd, base_year, end_year, config=None):
     """Calcula balanços de BV natural e RAD, incluindo as variações entre anos."""
     col_bv_base = f'Soma_BV_base_{base_year}'
     col_bv_end = f'Soma_BV_end_{end_year}'
@@ -259,7 +283,56 @@ def calcular_balanco_bv(FUCA, antBase, antEnd, base_year, end_year):
                 f'A coluna {column} contém valores ausentes ou não finitos.'
             )
 
+    has_rad = _validate_rad_columns(data, col_rad_base, col_rad_end)
+    if has_rad:
+        rad_base = data[col_rad_base] == 1
+        rad_end = data[col_rad_end] == 1
+    else:
+        rad_base = pd.Series(False, index=data.index)
+        rad_end = pd.Series(False, index=data.index)
+
+    config = config or {}
+    water_opunits = config.get('bv_water_natural_opunits', [])
+    if isinstance(water_opunits, str) or not isinstance(
+        water_opunits, (list, tuple, set)
+    ):
+        raise ValueError('bv_water_natural_opunits deve ser uma lista de OpUnits.')
+
     is_nat_base, is_nat_end = ~antBase, ~antEnd
+    if water_opunits:
+        col_lulc_base = f'LULC_{base_year}'
+        col_lulc_end = f'LULC_{end_year}'
+        missing_lulc_columns = [
+            col for col in (col_lulc_base, col_lulc_end) if col not in data.columns
+        ]
+        if missing_lulc_columns:
+            raise ValueError(
+                f'Tabela de comparação sem colunas LULC necessárias: '
+                f'{", ".join(missing_lulc_columns)}'
+            )
+
+        selected_opunits = {
+            str(opunit).strip().upper() for opunit in water_opunits
+        }
+        selected_rows = (
+            data['OpUnit'].astype(str).str.strip().str.upper().isin(selected_opunits)
+        )
+        water_class_names = {'33', '33.0', 'rio, lago e oceano'}
+
+        def is_water_class(column):
+            lulc_text = data[column].astype(str).str.strip().str.casefold()
+            return lulc_text.isin(water_class_names) | lulc_text.str.match(
+                r'^33(?:\.0)?\s*[-–:]\s*rio,\s*lago e oceano$'
+            )
+
+        water_base = selected_rows & is_water_class(col_lulc_base)
+        water_end = selected_rows & is_water_class(col_lulc_end)
+        is_nat_base = is_nat_base | water_base
+        is_nat_end = is_nat_end | water_end
+
+    is_nat_base &= ~rad_base
+    is_nat_end &= ~rad_end
+
     bv_base_name = f'BV_{base_year}'
     bv_end_name = f'BV_{end_year}'
 
@@ -313,13 +386,13 @@ def calcular_balanco_bv(FUCA, antBase, antEnd, base_year, end_year):
 
     base_opunits = data[['OpUnit']].drop_duplicates()
     bv_anthropic_base = (
-        data[~is_nat_base]
+        data[~is_nat_base & ~rad_base]
         .groupby('OpUnit', as_index=False)[col_bv_base]
         .sum()
         .rename(columns={col_bv_base: bv_base_name})
     )
     bv_anthropic_end = (
-        data[~is_nat_end]
+        data[~is_nat_end & ~rad_end]
         .groupby('OpUnit', as_index=False)[col_bv_end]
         .sum()
         .rename(columns={col_bv_end: bv_end_name})
@@ -338,9 +411,7 @@ def calcular_balanco_bv(FUCA, antBase, antEnd, base_year, end_year):
     )
 
     balance_rad = pd.DataFrame()
-    if _validate_rad_columns(data, col_rad_base, col_rad_end):
-        rad_base = data[col_rad_base] == 1
-        rad_end = data[col_rad_end] == 1
+    if has_rad:
         active_rad = rad_base | rad_end
         if active_rad.any():
             rad_change = data[col_bv_end] - data[col_bv_base]

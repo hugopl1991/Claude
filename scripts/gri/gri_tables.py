@@ -24,6 +24,7 @@ def main():
     BASE_YEAR = DATA['base_year_compare']
     END_YEAR = DATA['end_year']
     SIZE_PIXEL = DATA['size_pixel']
+    RECLASS_CONFIG = DATA
     
     # Formatos de saída CSV
     SEP = DATA['separator']
@@ -45,7 +46,8 @@ def main():
         arquivo_reclass=FILE_RECLASS,
         base_year=BASE_YEAR,
         end_year=END_YEAR,
-        size_pixel=SIZE_PIXEL
+        size_pixel=SIZE_PIXEL,
+        config=RECLASS_CONFIG,
     )
 
     # 2. Reclassificar áreas
@@ -58,8 +60,16 @@ def main():
     col_lulc_base = f'LULC_{BASE_YEAR}'
     col_lulc_end = f'LULC_{END_YEAR}'
 
-    FUCA[col_relulc_base] = reclass(FUCA[col_lulc_base], FUCA['OpUnit'], FUCA['ReIBGE'], Reclass_geral, Reclass_N4N5, Reclass_canga, 'LULC', 'Reclass_LULC')
-    FUCA[col_relulc_end] = reclass(FUCA[col_lulc_end], FUCA['OpUnit'], FUCA['ReIBGE'], Reclass_geral, Reclass_N4N5, Reclass_canga, 'LULC', 'Reclass_LULC')
+    FUCA[col_relulc_base] = reclass(
+        FUCA[col_lulc_base], FUCA['OpUnit'], FUCA['ReIBGE'],
+        Reclass_geral, Reclass_N4N5, Reclass_canga,
+        'LULC', 'Reclass_LULC', config=RECLASS_CONFIG,
+    )
+    FUCA[col_relulc_end] = reclass(
+        FUCA[col_lulc_end], FUCA['OpUnit'], FUCA['ReIBGE'],
+        Reclass_geral, Reclass_N4N5, Reclass_canga,
+        'LULC', 'Reclass_LULC', config=RECLASS_CONFIG,
+    )
 
     # 3. Gerar tabelas intermediárias (106ai e 107ai)
     antBase, antEnd, G106b = gerar_tabelas_intermediarias(
@@ -85,7 +95,7 @@ def main():
                         )
 
     SaidaBalancoBV = calcular_balanco_bv(
-        FUCA, antBase, antEnd, BASE_YEAR, END_YEAR
+        FUCA, antBase, antEnd, BASE_YEAR, END_YEAR, config=RECLASS_CONFIG
     )
     SaidaBalancoBV.to_csv(
         OUT_BV_BALANCE,

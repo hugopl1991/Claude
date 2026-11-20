@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 from shared.functions import clip_raster, create_dir, get_raster_band
-from biotic_value import (
+from shared.utils_biotic import (
     apply_condition,
     apply_rad_value,
     load_biotic_coefficients,

@@ -123,6 +123,7 @@ end_year = DATA['end_year']
 id_class = DATA['id_class_compare']
 all_touched = DATA['all_touched_compare']
 n_condition_classes = DATA['n_condition_classes']
+size_pixel = DATA['size_pixel']
 
 fito_file = PATHS['fito_map_file']
 lulc_file = PATHS['lulc_path']
@@ -180,11 +181,11 @@ raster_lulc_end = clip_raster(raster_path=lulc_end,
                           all_touched=all_touched)
 
 #Recorta mapa de area
-area_raster = area_file.format(AREA=area)
-area_raster = clip_raster(raster_path=area_raster,
-                          shp_path=shp_file,
-                          tmp_path=tmp_path,
-                          all_touched=all_touched)
+# area_raster = area_file.format(AREA=area)
+# area_raster = clip_raster(raster_path=area_raster,
+#                           shp_path=shp_file,
+#                           tmp_path=tmp_path,
+#                           all_touched=all_touched)
 
 # #Recorta mapa de Veg Sec
 # sec_veg_end = sec_veg_file.format(AREA=area,YEAR=end_year)
@@ -279,7 +280,7 @@ band_lulc_base, _ = get_raster_band(raster_lulc_base)
 band_lulc_end, _ = get_raster_band(raster_lulc_end)
 # band_sec_veg_end, _ = get_raster_band(sec_veg_end)
 band_ibge_raster, _ = get_raster_band(ibge_raster)
-band_area_raster, _ = get_raster_band(area_raster)
+# band_area_raster, _ = get_raster_band(area_raster)
 band_condition_map_base, nodata_condition_base = get_raster_band(condition_map_file_base)
 band_condition_map_end, nodata_condition_end = get_raster_band(condition_map_file_end)
 # band_edge_map, nodata_edge = get_raster_band(edge_map_file)
@@ -321,11 +322,13 @@ band_condition_map_end = np.digitize(band_condition_map_end, bins, right=True) +
 #print(nodata_edge,nodata_fire)
 print(len(list_indices))
 
-# Calcula a area total de cobertura %
-geom = read_dissolve_shp(shp_file)
+# Area de cada pixel, em m2
+# geom = read_dissolve_shp(shp_file)
 # band_perc = fractional_pixel_weights(raster_lulc_end, geom, list_indices)
-band_perc = fractional_pixel_weights_optimized(raster_lulc_end, geom)
-band_perc_area = band_perc * band_area_raster
+# band_perc = fractional_pixel_weights_optimized(raster_lulc_end, geom)
+# band_perc_area = band_perc * band_area_raster
+area_por_pixel = size_pixel ** 2
+band_area_pixels = np.full(band_lulc_end.shape, area_por_pixel, dtype=np.float64)
 
 if nodata_bv_base is not None: # Caso o mapa de BV base tenha Nodata, substitui por 0
     band_bv_base = np.where(band_bv_base == nodata_bv_base, 0, band_bv_base)
@@ -334,7 +337,7 @@ if nodata_bv_end is not None:  # Caso o mapa de BV final tenha Nodata, substitui
 
 #soma_total_area = 0
 #for ind in list_indices:
-#    soma_total_area += band_perc_area[ind[0]][ind[1]]
+#    soma_total_area += area_por_pixel
 #print(f'Soma total de area: {soma_total_area}')
 
 # df = pd.DataFrame(columns=[#f'LULC_{base_year}',
@@ -356,7 +359,7 @@ lista_matrizes = [band_opunit_id_map,
                     band_condition_map_end,
                     # band_edge_map,
                     # band_fire_map,
-                    band_perc_area,
+                    band_area_pixels,
                     band_bv_base,
                     band_bv_end]
 if rad_mask_enabled:
@@ -450,7 +453,7 @@ combinacoes_unicas.loc[combinacoes_unicas[f'Condicao_{end_year}'] == nodata_cond
 
 combinacoes_unicas[f'Soma_BV_base_{base_year}'] = (combinacoes_unicas[f'Soma_BV_base_{base_year}'] / 100).round(2)
 combinacoes_unicas[f'Soma_BV_end_{end_year}'] = (combinacoes_unicas[f'Soma_BV_end_{end_year}'] / 100).round(2)
-combinacoes_unicas['Area m2'] = (combinacoes_unicas['Area m2'] / 10).round(2)
+combinacoes_unicas['Area m2'] = combinacoes_unicas['Area m2'].round(2)
 
 combinacoes_unicas['OpUnit'] = combinacoes_unicas['OpUnit'].replace(uni_op[area])
 combinacoes_unicas[f'LULC_{base_year}'] = combinacoes_unicas[f'LULC_{base_year}'].replace(dict_lulc)

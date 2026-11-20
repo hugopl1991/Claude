@@ -39,7 +39,7 @@ Paths:
   bioma_map_file: "inputs_indicadores/inputs/Biomas/{BIOMA}.shp"      # Caminho para o shape de biomas-(OBRIGATORIO).
   condition_map_file_base: map_weights_100_{BASE_YEAR}.tif     # Caminho para o mapa de condicao ano base-(OBRIGATORIO).
   condition_map_file_end: map_weights_100_{END_YEAR}.tif       # Caminho para o mapa de condicao ano final-(OBRIGATORIO).
-  area_map_file: "inputs/Mapa_Area/pxA_x10m2_sembuffer.tif"           # Caminho para o mapa de area-(OBRIGATORIO).
+  area_map_file: "inputs/Mapa_Area/pxA_x10m2_sembuffer.tif"      # Caminho para o mapa de area-(OBRIGATORIO).
   opunit_id_csv_file: "inputs/Planilhas/OpUnit_ID_2025.csv"             # Arquivo csv contendo os IDs de cada unidade operacional-(OBRIGATORIO).
   opunit_id_map_file: "inputs/Mapas_OpUnit_2025/ADAimo_{AREA}_2025.tif" # Diretorio do mapa de IDs de cada unidade operacional-(OBRIGATORIO).
   opunit_metadata_file: "inputs/Planilhas/OpUnit_Lista_2025.csv"        # Arquivo csv contendo os metadados de cada unidade operacional-(OBRIGATORIO).
@@ -65,7 +65,7 @@ Data:
   start_year: 2000 # Ano inicial para o cálculo da frequência de queimadas -(OBRIGATORIO).
   end_year: 2024   # Ano final para o processamento, usado em todos os scripts -(OBRIGATORIO).
   base_year_veg: 1985  # Ano base usado no script de vegetacao segundaria -(OBRIGATORIO).
-  base_year_compare: 2020 # Ano final para o processamento, usado em comparacao de condicoes -(OBRIGATORIO).
+  base_year_compare: 2011 # Ano final para o processamento, usado em comparacao de condicoes -(OBRIGATORIO).
   # Variaveis usadas pelos script burn frq, queimadas e bordas
   max_ram_usage: 0.6  # Porcentagem máxima de uso de RAM (0.6 = 60%)
   nodata: -9999       # Nodata (Alterado para valores negativo). NÃO USAR ZERO AQUI - Condicao de borda apresenta valores negativos no raster.
@@ -109,3 +109,15 @@ Data:
   decimal_separator: "," # Separador decimal para os arquivos CSV de saída ("," ou ".")
   separator: ";"         # Separador de campo para os arquivos CSV de saída (";" ou ",")
   float_format: "%.5f"   # Formato de ponto flutuante para os arquivos CSV de saída (ex: "%.2f" para duas casas decimais)
+  lulc_reclass_sheets: ["Reclass_IBGE", "Reclass_LULC_canga", "Reclass_LULC_N4N5",
+    "Reclass_LULC_floresta"] # Planilhas de reclassificação de LULC e Condição-(OBRIGATORIO).
+  lulc_canga_sheet: "Reclass_LULC_canga" # Planilha de reclassificação de Canga.
+  lulc_n4n5_sheet: "Reclass_LULC_N4N5"  # Planilha de reclassificação da Mina N4N5.
+  n4n5_operational_units: ["N4N5"]
+  canga_ibge_classes: ["Refúgio Vegetacional Montano"] # Classes de canga que devem ser consideradas naturais no cálculo do balanço natural e BV.
+  lulc_class_corrections: # Correções de classes LULC para o cálculo do balanço natural e BV.
+    - when_end: "S11D - PARNA"
+      set_base: "S11D"
+  # Informe aqui as OpUnits em que a classe LULC 33 (Rio, Lago e Oceano) deve ser natural no balanço de BV.
+  bv_water_natural_opunits: ["S11D", "Estrada_de_Ferro_Carajas_1", "Estrada_de_Ferro_Carajas_3",
+    "Ponta_da_Madeira"]                                                                                              # Exemplo: ["OpUnit_1", "OpUnit_2"]
